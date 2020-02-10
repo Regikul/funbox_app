@@ -25,8 +25,8 @@ init([]) ->
       period => 1
     },
     ChildSpecs = [
-      ?WORKER(fb_generator),
-      ?WORKER(fb_filter)
+      ?WORKER(fb_filter),
+      ?WORKER(fb_generator)
     ],
     {ok, {SupFlags, ChildSpecs}}.
 

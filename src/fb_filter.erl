@@ -102,7 +102,7 @@ read_number() ->
 read_number(now) ->
   gen_server:cast(?SERVER, {read_number});
 read_number(Delay) ->
-  timer:apply_after(Delay, gen_server, cast, [{read_number}]).
+  timer:apply_after(Delay, gen_server, cast, [?SERVER, {read_number}]).
 
 check_prime(Number) ->
   gen_server:cast(?SERVER, {check_prime, Number}).

@@ -22,13 +22,14 @@
 
 -define(SERVER, ?MODULE).
 
-%%-define(TICK_TIME, 1000000 div 3000). %% 3000 times per second
-
--define(TICK_TIME, 1000000 div 3). %% 3 times per second
+-define(TIME_NOW, erlang:monotonic_time(millisecond)).
 
 -record(state, {
   redis :: pid(),
-  timer
+  tick_no = 0 :: non_neg_integer(),
+  queue :: binary(),
+  upper :: pos_integer(),
+  last_event :: integer()
 }).
 
 %%%===================================================================
@@ -43,17 +44,43 @@ init([]) ->
   Host = proplists:get_value(host, RedisConfig, ?REDIS_HOST),
   Port = proplists:get_value(port, RedisConfig, ?REDIS_PORT),
   DB = proplists:get_value(db, RedisConfig, ?REDIS_DB),
+  Queue = case application:get_env(queue_key) of
+            {ok, Q} -> Q;
+            undefined -> ?REDIS_GENERATOR_QUEUE
+          end,
+  Upper = case application:get_env(n) of
+            {ok, X} -> X;
+            undefined -> ?UPPER_VALUE
+          end,
   {ok, Redis} = eredis:start_link(Host, Port, DB),
-  Timer = microtimer:send_interval({tick}, self(), ?TICK_TIME),
+  tick(),
   {ok, #state{
     redis = Redis,
-    timer = Timer
+    queue = Queue,
+    upper = Upper,
+    last_event = ?TIME_NOW
   }}.
 
 handle_call(_Request, _From, State = #state{}) ->
   lager:warning("unknown call ~p", [_Request]),
   {reply, ok, State}.
 
+handle_cast({tick}, #state{last_event = LastEvent,
+                           redis = Redis,
+                           queue = Queue,
+                           upper = Upper
+                          } = State) ->
+  tick(),
+  Now = ?TIME_NOW,
+  case false of
+    true -> _ = numbers(Upper);
+    false -> ok
+  end,
+  lager:info("time diff is ~p", [Now - LastEvent]),
+  Generator = fun () -> numbers(Upper) end,
+  Numbers = lists:flatmap(fun (F) -> F() end, lists:duplicate(Now - LastEvent, Generator)),
+  push_into_queue(Redis, Queue, Numbers),
+  {noreply, State#state{last_event = Now}};
 handle_cast(_Request, State = #state{}) ->
   lager:warning("unknown cast ~p", [_Request]),
   {noreply, State}.
@@ -65,8 +92,8 @@ handle_info(_Info, State = #state{}) ->
   lager:warning("unknown info ~p", [_Info]),
   {noreply, State}.
 
-terminate(_Reason, _State = #state{timer = Timer}) ->
-  microtimer:cancel(Timer).
+terminate(_Reason, _State = #state{}) ->
+  ok.
 
 code_change(_OldVsn, State = #state{}, _Extra) ->
   {ok, State}.
@@ -74,3 +101,17 @@ code_change(_OldVsn, State = #state{}, _Extra) ->
 %%%===================================================================
 %%% Internal functions
 %%%===================================================================
+
+tick() ->
+  timer:apply_after(1, gen_server, cast, [?SERVER, {tick}]).
+%%  gen_server:cast(?SERVER, {tick}).
+
+numbers(Upper) ->
+  [
+    rand:uniform(Upper),
+    rand:uniform(Upper),
+    rand:uniform(Upper)
+  ].
+
+push_into_queue(Redis, Queue, Values) ->
+  eredis:q(Redis, ["LPUSH", Queue | Values]).
