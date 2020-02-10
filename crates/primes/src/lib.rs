@@ -11,7 +11,7 @@ rustler_export_nifs!(
     Some(on_load)
 );
 
-fn on_load(env: Env, _info: Term) -> bool {
+fn on_load(_env: Env, _info: Term) -> bool {
     true
 }
 

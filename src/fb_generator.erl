@@ -8,6 +8,10 @@
 
 -include("funbox.hrl").
 
+-ifdef(TEST).
+-include_lib("eunit/include/eunit.hrl").
+-endif.
+
 -behaviour(gen_server).
 
 -export([start_link/0]).
@@ -76,7 +80,6 @@ handle_cast({tick}, #state{last_event = LastEvent,
     true -> _ = numbers(Upper);
     false -> ok
   end,
-  lager:info("time diff is ~p", [Now - LastEvent]),
   Generator = fun () -> numbers(Upper) end,
   Numbers = lists:flatmap(fun (F) -> F() end, lists:duplicate(Now - LastEvent, Generator)),
   push_into_queue(Redis, Queue, Numbers),
@@ -106,12 +109,22 @@ tick() ->
   timer:apply_after(1, gen_server, cast, [?SERVER, {tick}]).
 %%  gen_server:cast(?SERVER, {tick}).
 
-numbers(Upper) ->
+numbers(Upper) when Upper > 2 ->
   [
-    rand:uniform(Upper),
-    rand:uniform(Upper),
-    rand:uniform(Upper)
+    rand:uniform(Upper - 1) + 1,
+    rand:uniform(Upper - 1) + 1,
+    rand:uniform(Upper - 1) + 1
   ].
 
 push_into_queue(Redis, Queue, Values) ->
   eredis:q(Redis, ["LPUSH", Queue | Values]).
+
+-ifdef(TEST).
+
+numbers_test() ->
+  UpTo = 100,
+  N = numbers(100),
+  ?assert(length(N) =:= 3),
+  ?assert(lists:all(fun (X) -> 2 < X andalso X < UpTo end, N)).
+
+-endif.
